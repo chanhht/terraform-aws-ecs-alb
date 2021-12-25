@@ -285,3 +285,9 @@ variable "additional_certificates_arn_for_https_listeners" {
   type        = list(any)
   default     = []
 }
+
+variable "enable_alb_logs" {
+  description = "(Optional) Enable ALB logs"
+  type = bool
+  default = true
+}

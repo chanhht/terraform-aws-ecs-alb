@@ -10,12 +10,15 @@ resource "aws_s3_bucket" "logs" {
       Name = "${var.name_prefix}-lb-logs"
     },
   )
+  count = var.enable_alb_logs ? 1 : 0
 }
 
 #------------------------------------------------------------------------------
 # IAM POLICY DOCUMENT - For access logs to the S3 bucket
 #------------------------------------------------------------------------------
-data "aws_elb_service_account" "default" {}
+data "aws_elb_service_account" "default" {
+  count = var.enable_alb_logs ? 1 : 0
+}
 
 data "aws_iam_policy_document" "lb_logs_access_policy_document" {
   statement {
@@ -23,7 +26,7 @@ data "aws_iam_policy_document" "lb_logs_access_policy_document" {
 
     principals {
       type        = "AWS"
-      identifiers = [data.aws_elb_service_account.default.arn]
+      identifiers = [data.aws_elb_service_account.default[0].arn]
     }
 
     actions = [
@@ -31,27 +34,29 @@ data "aws_iam_policy_document" "lb_logs_access_policy_document" {
     ]
 
     resources = [
-      "${aws_s3_bucket.logs.arn}/*",
+      "${aws_s3_bucket.logs[0].arn}/*",
       "arn:aws:s3:::${var.name_prefix}-lb-logs/*",
     ]
   }
+  count = var.enable_alb_logs ? 1 : 0
 }
 
 #------------------------------------------------------------------------------
 # IAM POLICY - For access logs to the s3 bucket
 #------------------------------------------------------------------------------
 resource "aws_s3_bucket_policy" "lb_logs_access_policy" {
-  bucket = aws_s3_bucket.logs.id
-  policy = data.aws_iam_policy_document.lb_logs_access_policy_document.json
+  bucket = aws_s3_bucket.logs[0].id
+  policy = data.aws_iam_policy_document.lb_logs_access_policy_document[0].json
+  count = var.enable_alb_logs ? 1 : 0
 }
 
 #------------------------------------------------------------------------------
 # S3 bucket block public access
 #------------------------------------------------------------------------------
 resource "aws_s3_bucket_public_access_block" "lb_logs_block_public_access" {
-  count = var.block_s3_bucket_public_access ? 1 : 0
+  count = var.block_s3_bucket_public_access && var.enable_alb_logs ? 1 : 0
 
-  bucket = aws_s3_bucket.logs.id
+  bucket = aws_s3_bucket.logs[0].id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -79,9 +84,12 @@ resource "aws_lb" "lb" {
     concat(var.security_groups, [aws_security_group.lb_access_sg.id]),
   )
 
-  access_logs {
-    bucket  = aws_s3_bucket.logs.id
-    enabled = true
+  dynamic "access_logs" {
+    for_each = aws_s3_bucket.logs
+    content {
+      bucket  = access_logs.value.id
+      enabled = true
+    }
   }
 
   tags = merge(
